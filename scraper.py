@@ -21,7 +21,7 @@ def fetch_product_data(sku):
         response = requests.get(url_ru, headers=HEADERS, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            products = data.get("data", {}).get("products", [])
+            products = data.get("products", [])
             if products:
                 return products[0]
     except Exception as e:
@@ -33,7 +33,7 @@ def fetch_product_data(sku):
         response = requests.get(url_uz, headers=HEADERS, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            products = data.get("data", {}).get("products", [])
+            products = data.get("products", [])
             if products:
                 return products[0]
             else:
