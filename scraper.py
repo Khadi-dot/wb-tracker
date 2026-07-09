@@ -15,7 +15,8 @@ def fetch_product_data(sku):
     """
     Fetches product details from the Wildberries API for a given SKU.
     """
-    url = f"https://card.wb.ru/cards/v2/detail?appType=1&curr=rub&dest=-1257786&nm={sku}"
+    # Use the u-card API endpoint which does not require x-pow challenges
+    url = f"https://u-card.wb.ru/cards/v4/detail?appType=1&curr=uzs&dest=491&nm={sku}"
     try:
         response = requests.get(url, headers=HEADERS, timeout=10)
         if response.status_code == 200:
@@ -47,18 +48,25 @@ def process_sku(cur, sku, target_date=None):
     name = product.get("name", "Unknown Product")
     brand = product.get("brand", "Unknown Brand")
     
-    # salePriceU is the discounted price. Divided by 100 to convert to rubles.
-    sale_price_u = product.get("salePriceU") or product.get("priceU") or 0
-    price = int(sale_price_u / 100)
+    # Extract price from the first available size
+    price = 0
+    sizes = product.get("sizes", [])
+    if sizes:
+        price_obj = sizes[0].get("price", {})
+        price = int(price_obj.get("product", 0) / 100)
+        if not price:
+            price = int(price_obj.get("basic", 0) / 100)
 
-    # Calculate total stock across all sizes
-    stock = 0
-    for size in product.get("sizes", []):
-        for stock_item in size.get("stocks", []):
-            stock += stock_item.get("qty", 0)
+    # Use totalQuantity from the product level, falling back to sum of size stocks
+    stock = product.get("totalQuantity")
+    if stock is None:
+        stock = 0
+        for size in sizes:
+            for stock_item in size.get("stocks", []):
+                stock += stock_item.get("qty", 0)
 
-    rating = product.get("rating") or product.get("reviewRating") or 0.0
-    feedback_count = product.get("feedbacks") or 0
+    rating = product.get("reviewRating") or product.get("rating") or 0.0
+    feedback_count = product.get("feedbacks") or product.get("nmFeedbacks") or 0
 
     # Ensure tracked_items descriptive fields are updated if they were blank
     cur.execute(
