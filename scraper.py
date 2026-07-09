@@ -15,21 +15,33 @@ def fetch_product_data(sku):
     """
     Fetches product details from the Wildberries API for a given SKU.
     """
-    # Use the u-card API endpoint which does not require x-pow challenges
-    url = f"https://u-card.wb.ru/cards/v4/detail?appType=1&curr=uzs&dest=491&nm={sku}"
+    # 1. Try Moscow/Russian parameters first (most comprehensive catalog)
+    url_ru = f"https://u-card.wb.ru/cards/v4/detail?appType=1&curr=rub&dest=-1257786&nm={sku}"
     try:
-        response = requests.get(url, headers=HEADERS, timeout=10)
+        response = requests.get(url_ru, headers=HEADERS, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            products = data.get("data", {}).get("products", [])
+            if products:
+                return products[0]
+    except Exception as e:
+        print(f"Error fetching Russian data for SKU {sku}: {e}")
+
+    # 2. Fallback to Tashkent/Uzbekistan parameters if not found in Moscow catalog
+    url_uz = f"https://u-card.wb.ru/cards/v4/detail?appType=1&curr=uzs&dest=491&nm={sku}"
+    try:
+        response = requests.get(url_uz, headers=HEADERS, timeout=10)
         if response.status_code == 200:
             data = response.json()
             products = data.get("data", {}).get("products", [])
             if products:
                 return products[0]
             else:
-                print(f"Product SKU {sku} not found in the response.")
+                print(f"Product SKU {sku} not found in both RU and UZ catalogs.")
         else:
             print(f"Failed to fetch data for SKU {sku}. Status code: {response.status_code}")
     except Exception as e:
-        print(f"Error fetching data for SKU {sku}: {e}")
+        print(f"Error fetching Uzbek data for SKU {sku}: {e}")
     return None
 
 def process_sku(cur, sku, target_date=None):
