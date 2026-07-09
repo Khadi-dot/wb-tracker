@@ -240,7 +240,7 @@ if check_password():
                 st.sidebar.error(f"Scraper runtime error: {e}")
 
     # MAIN ANALYTICS WORKSPACE
-    st.title("👕 WB Textile Competitor Tracker")
+    st.title("📊 MPSTATS Competitor Intelligence Node")
     st.markdown("Automated market tracking for private label textile products on Wildberries.")
 
     if not tracked_items_list:
@@ -249,7 +249,7 @@ if check_password():
         # Load Data
         conn = get_db_connection()
         try:
-            # 7-day query
+            # 7-day query including estimated revenue
             leaderboard_query = """
                 SELECT 
                     t.sku, 
@@ -258,6 +258,7 @@ if check_password():
                     t.category,
                     COALESCE(SUM(s.estimated_sales), 0) as total_sales,
                     COALESCE(ROUND(AVG(s.price), 0), 0) as avg_price,
+                    COALESCE(SUM(s.estimated_sales * s.price), 0) as estimated_revenue,
                     COALESCE((SELECT stock FROM daily_snapshots WHERE sku = t.sku ORDER BY recorded_date DESC LIMIT 1), 0) as current_stock,
                     COALESCE(ROUND(AVG(s.rating), 2), 0.00) as avg_rating,
                     COALESCE((SELECT feedback_count FROM daily_snapshots WHERE sku = t.sku ORDER BY recorded_date DESC LIMIT 1), 0) as current_feedbacks
@@ -268,7 +269,7 @@ if check_password():
             """
             df_leaderboard = pd.read_sql(leaderboard_query, conn)
             
-            # Timeline query
+            # Timeline query including revenue
             timeline_query = """
                 SELECT 
                     s.recorded_date,
@@ -278,7 +279,8 @@ if check_password():
                     t.category,
                     s.price,
                     s.stock,
-                    s.estimated_sales
+                    s.estimated_sales,
+                    (s.estimated_sales * s.price) as estimated_revenue
                 FROM daily_snapshots s
                 JOIN tracked_items t ON s.sku = t.sku
                 WHERE s.recorded_date >= CURRENT_DATE - INTERVAL '30 days'
@@ -311,32 +313,41 @@ if check_password():
             # Add classification labels
             df_leaderboard["Type"] = df_leaderboard["sku"].apply(lambda x: "Our Store" if x in own_skus else "Competitor")
             
-            # Top-level Metric Highlights Cards
+            # Calculate metrics
+            total_sales = df_leaderboard["total_sales"].sum()
+            total_revenue = df_leaderboard["estimated_revenue"].sum()
             our_sales = df_leaderboard[df_leaderboard["Type"] == "Our Store"]["total_sales"].sum()
-            comp_leader = df_leaderboard[df_leaderboard["Type"] == "Competitor"]
+            our_revenue = df_leaderboard[df_leaderboard["Type"] == "Our Store"]["estimated_revenue"].sum()
             
-            lead_comp_name = "N/A"
-            lead_comp_sales = 0
-            if not comp_leader.empty:
-                lead_comp_name = f"{comp_leader.iloc[0]['brand']} ({comp_leader.iloc[0]['sku']})"
-                lead_comp_sales = comp_leader.iloc[0]["total_sales"]
-                
+            # Top Brand calculation
+            brand_performance = df_leaderboard.groupby("brand")["total_sales"].sum().reset_index()
+            if not brand_performance.empty:
+                top_brand_row = brand_performance.sort_values("total_sales", ascending=False).iloc[0]
+                top_brand_name = top_brand_row["brand"]
+                top_brand_sales = top_brand_row["total_sales"]
+            else:
+                top_brand_name = "N/A"
+                top_brand_sales = 0
+
+            # Market share share percentage
+            market_share_pct = (our_sales / total_sales * 100) if total_sales > 0 else 0.0
+            
             st.markdown(f"""
                 <div class="metric-container">
                     <div class="metric-card metric-card-own">
-                        <div class="metric-title">Our Store Total Sales</div>
-                        <div class="metric-val">{our_sales} units</div>
-                        <div class="metric-sub">Sum of all designated store SKUs (7 days)</div>
+                        <div class="metric-title">Our Store Revenue</div>
+                        <div class="metric-val">{our_revenue:,.0f} RUB</div>
+                        <div class="metric-sub">{our_sales:,} units sold ({market_share_pct:.1f}% share)</div>
                     </div>
                     <div class="metric-card metric-card-comp">
-                        <div class="metric-title">Top Competitor</div>
-                        <div class="metric-val">{lead_comp_name}</div>
-                        <div class="metric-sub">Leaderboard top performer: {lead_comp_sales} units (7 days)</div>
+                        <div class="metric-title">Market Size (7d)</div>
+                        <div class="metric-val">{total_revenue:,.0f} RUB</div>
+                        <div class="metric-sub">{total_sales:,} total units sold across {len(df_leaderboard)} items</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-title">Total Monitored items</div>
-                        <div class="metric-val">{len(df_leaderboard)} items</div>
-                        <div class="metric-sub">Across all textile categories</div>
+                        <div class="metric-title">Top Selling Brand</div>
+                        <div class="metric-val">{top_brand_name}</div>
+                        <div class="metric-sub">{top_brand_sales:,} units sold (7d)</div>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -350,20 +361,35 @@ if check_password():
             if selected_cat != 'All':
                 df_filtered = df_filtered[df_filtered["category"] == selected_cat]
                 
+            # Add dynamic stock warnings
+            def get_stock_status(stock):
+                if stock == 0:
+                    return "🔴 Out of Stock"
+                elif stock < 10:
+                    return "🟡 Low Stock"
+                else:
+                    return "🟢 Healthy"
+            
+            df_filtered["Stock Status"] = df_filtered["current_stock"].apply(get_stock_status)
+            df_filtered["sku_link"] = df_filtered["sku"].apply(lambda x: f"https://www.wildberries.uz/catalog/{x}/detail.aspx")
+            
             # Render styled dataframe
             def highlight_own(row):
-                return ['background-color: rgba(255, 75, 75, 0.15)' if row.Type == 'Our Store' else '' for _ in row]
+                return ['background-color: rgba(255, 75, 75, 0.12)' if row.Type == 'Our Store' else '' for _ in row]
                 
             st.dataframe(
                 df_filtered.style.apply(highlight_own, axis=1),
                 column_config={
+                    "sku_link": st.column_config.LinkColumn("Product Page", display_text="🔗 View on WB"),
                     "sku": st.column_config.TextColumn("SKU"),
                     "name": st.column_config.TextColumn("Product Name"),
                     "brand": st.column_config.TextColumn("Brand"),
                     "category": st.column_config.TextColumn("Category"),
                     "total_sales": st.column_config.NumberColumn("Est. Sales (7d)", format="%d"),
                     "avg_price": st.column_config.NumberColumn("Avg Price (7d)", format="%d RUB"),
-                    "current_stock": st.column_config.NumberColumn("Stock", format="%d"),
+                    "estimated_revenue": st.column_config.NumberColumn("Est. Revenue (7d)", format="%d RUB"),
+                    "current_stock": st.column_config.NumberColumn("Stock qty", format="%d"),
+                    "Stock Status": st.column_config.TextColumn("Stock Status"),
                     "avg_rating": st.column_config.NumberColumn("Rating", format="%.2f ⭐"),
                     "current_feedbacks": st.column_config.NumberColumn("Reviews", format="%d"),
                     "Type": st.column_config.TextColumn("Classification")
@@ -372,46 +398,87 @@ if check_password():
                 use_container_width=True
             )
             
-            # Charts Timeline Workspace
-            st.subheader("📈 Pricing vs. Daily Sales Timeline")
+            # Charts Workspace
+            st.subheader("📈 MPSTATS Visual Analytics Workspace")
             
             if not df_timeline.empty:
                 # Merge Store Classification into timeline df
                 df_timeline["Type"] = df_timeline["sku"].apply(lambda x: "Our Store" if x in own_skus else "Competitor")
                 df_timeline["label"] = df_timeline.apply(lambda r: f"[{r['Type']}] {r['brand']} ({r['sku']})", axis=1)
                 
-                # Interactive Filter on category or individual items
-                chart_categories = ['All'] + list(df_timeline["category"].unique())
-                selected_chart_cat = st.selectbox("Filter Chart by Category:", options=chart_categories, key="chart_cat")
-                
-                df_chart = df_timeline.copy()
-                if selected_chart_cat != 'All':
-                    df_chart = df_chart[df_chart["category"] == selected_chart_cat]
-                
                 # Format Dates
-                df_chart["recorded_date"] = pd.to_datetime(df_chart["recorded_date"])
+                df_timeline["recorded_date"] = pd.to_datetime(df_timeline["recorded_date"])
                 
-                tab1, tab2, tab3 = st.tabs([
-                    "Price vs. Sales (Scatter)",
-                    "Retail Price Trend (Line)",
-                    "Daily Sales Trend (Bar)"
+                tab1, tab2, tab3, tab4 = st.tabs([
+                    "📊 Brand & Category Share",
+                    "📦 Stock Dynamics (Out of Stock alert)",
+                    "💸 Pricing vs. Sales Dynamics",
+                    "📅 Performance Trends over Time"
                 ])
                 
                 with tab1:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        # Brand Share by Revenue
+                        brand_rev = df_timeline.groupby("brand")["estimated_revenue"].sum().reset_index()
+                        fig_brand_rev = px.pie(
+                            brand_rev,
+                            values="estimated_revenue",
+                            names="brand",
+                            title="Brand Market Share (by Revenue in RUB)",
+                            color_discrete_sequence=px.colors.qualitative.Pastel
+                        )
+                        fig_brand_rev.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)")
+                        st.plotly_chart(fig_brand_rev, use_container_width=True)
+                        
+                    with col2:
+                        # Category Share by Revenue
+                        cat_rev = df_timeline.groupby("category")["estimated_revenue"].sum().reset_index()
+                        fig_cat_rev = px.pie(
+                            cat_rev,
+                            values="estimated_revenue",
+                            names="category",
+                            title="Category Sales Distribution (by Revenue in RUB)",
+                            color_discrete_sequence=px.colors.qualitative.Safe
+                        )
+                        fig_cat_rev.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)")
+                        st.plotly_chart(fig_cat_rev, use_container_width=True)
+                        
+                with tab2:
+                    # Stock Dynamics over Time
+                    fig_stock = px.line(
+                        df_timeline,
+                        x="recorded_date",
+                        y="stock",
+                        color="label",
+                        hover_name="name",
+                        title="Stock Level Trends (Detect competitor out-of-stock events!)",
+                        labels={"stock": "Inventory Stock Qty", "recorded_date": "Date"}
+                    )
+                    fig_stock.update_layout(
+                        template="plotly_dark",
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        xaxis_gridcolor="rgba(255,255,255,0.05)",
+                        yaxis_gridcolor="rgba(255,255,255,0.05)"
+                    )
+                    st.plotly_chart(fig_stock, use_container_width=True)
+                    
+                with tab3:
+                    # Scatter Plot Price vs Sales
                     fig_scatter = px.scatter(
-                        df_chart,
+                        df_timeline,
                         x="recorded_date",
                         y="price",
                         size="estimated_sales",
                         color="label",
                         hover_name="name",
                         hover_data=["sku", "stock", "price", "estimated_sales"],
-                        title="Retail Prices Mapping against Estimated Sales Volume (Bubble Size)",
+                        title="Retail Price Levels mapped against Estimated Sales Volume (Bubble Size)",
                         labels={
                             "price": "Retail Price (RUB)",
                             "recorded_date": "Timeline",
-                            "estimated_sales": "Daily Sales Vol",
-                            "label": "Product"
+                            "estimated_sales": "Daily Sales Vol"
                         },
                         size_max=35
                     )
@@ -424,51 +491,47 @@ if check_password():
                     )
                     st.plotly_chart(fig_scatter, use_container_width=True)
                     
-                with tab2:
-                    fig_line = px.line(
-                        df_chart,
-                        x="recorded_date",
-                        y="price",
-                        color="label",
-                        hover_name="name",
-                        title="Timeline Retail Price Fluctuations",
-                        labels={
-                            "price": "Retail Price (RUB)",
-                            "recorded_date": "Timeline",
-                            "label": "Product"
-                        }
-                    )
-                    fig_line.update_layout(
-                        template="plotly_dark",
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        xaxis_gridcolor="rgba(255,255,255,0.05)",
-                        yaxis_gridcolor="rgba(255,255,255,0.05)"
-                    )
-                    st.plotly_chart(fig_line, use_container_width=True)
-                    
-                with tab3:
-                    fig_bar = px.bar(
-                        df_chart,
-                        x="recorded_date",
-                        y="estimated_sales",
-                        color="label",
-                        hover_name="name",
-                        title="Estimated Daily Units Sold",
-                        labels={
-                            "estimated_sales": "Estimated Sales Volume",
-                            "recorded_date": "Timeline",
-                            "label": "Product"
-                        },
-                        barmode="group"
-                    )
-                    fig_bar.update_layout(
-                        template="plotly_dark",
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        xaxis_gridcolor="rgba(255,255,255,0.05)",
-                        yaxis_gridcolor="rgba(255,255,255,0.05)"
-                    )
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                with tab4:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        # Price Line Chart
+                        fig_price_trend = px.line(
+                            df_timeline,
+                            x="recorded_date",
+                            y="price",
+                            color="label",
+                            hover_name="name",
+                            title="Daily Price Fluctuations",
+                            labels={"price": "Retail Price (RUB)", "recorded_date": "Date"}
+                        )
+                        fig_price_trend.update_layout(
+                            template="plotly_dark",
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            xaxis_gridcolor="rgba(255,255,255,0.05)",
+                            yaxis_gridcolor="rgba(255,255,255,0.05)"
+                        )
+                        st.plotly_chart(fig_price_trend, use_container_width=True)
+                        
+                    with col2:
+                        # Daily Sales Bar Chart
+                        fig_sales_trend = px.bar(
+                            df_timeline,
+                            x="recorded_date",
+                            y="estimated_sales",
+                            color="label",
+                            hover_name="name",
+                            title="Estimated Daily Units Sold",
+                            labels={"estimated_sales": "Units Sold", "recorded_date": "Date"},
+                            barmode="group"
+                        )
+                        fig_sales_trend.update_layout(
+                            template="plotly_dark",
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            xaxis_gridcolor="rgba(255,255,255,0.05)",
+                            yaxis_gridcolor="rgba(255,255,255,0.05)"
+                        )
+                        st.plotly_chart(fig_sales_trend, use_container_width=True)
             else:
                 st.info("ℹ️ No historical snapshot timeline coordinates to map. Try executing a manual scraper run from the sidebar panel.")
