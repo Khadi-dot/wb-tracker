@@ -8,10 +8,19 @@ def get_db_connection():
     """
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
-        raise ValueError(
-            "DATABASE_URL environment variable is not set. "
-            "Please ensure you have configured it in your environment or .env file."
-        )
+        # Fallback to individual PostgreSQL variables if DATABASE_URL is not provided
+        pg_host = os.environ.get("PGHOST")
+        pg_user = os.environ.get("PGUSER")
+        pg_password = os.environ.get("PGPASSWORD")
+        pg_database = os.environ.get("PGDATABASE")
+        pg_port = os.environ.get("PGPORT", "5432")
+        if pg_host and pg_user and pg_password and pg_database:
+            db_url = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
+        else:
+            raise ValueError(
+                "DATABASE_URL or individual PG connection variables (PGHOST, PGUSER, PGPASSWORD, PGDATABASE) "
+                "are not set. Please ensure you have configured them in your environment."
+            )
     
     # Core Fix: Automatically format connection strings starting with 'postgres://'
     # into 'postgresql://' to maintain compatibility with modern drivers.
