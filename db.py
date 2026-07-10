@@ -46,8 +46,22 @@ def init_db():
                     sku VARCHAR(50) PRIMARY KEY,
                     name VARCHAR(255),
                     brand VARCHAR(100),
-                    category VARCHAR(50)
+                    category VARCHAR(50),
+                    is_own_store BOOLEAN DEFAULT FALSE
                 );
+            """)
+
+            # Migration: add is_own_store column if it doesn't exist yet (for existing DBs)
+            cur.execute("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='tracked_items' AND column_name='is_own_store'
+                    ) THEN
+                        ALTER TABLE tracked_items ADD COLUMN is_own_store BOOLEAN DEFAULT FALSE;
+                    END IF;
+                END$$;
             """)
             
             # Create daily_snapshots table
