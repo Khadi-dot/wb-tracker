@@ -235,14 +235,12 @@ def inject_css():
 
 def kpi_card(icon: str, label: str, value: str, sub: str = "", accent: str = "blue") -> str:
     """Return HTML for a KPI card."""
-    return f"""
-    <div class="kpi-card accent-{accent}">
-        <span class="kpi-icon">{icon}</span>
-        <div class="kpi-label">{label}</div>
-        <div class="kpi-value">{value}</div>
-        {'<div class="kpi-sub">' + sub + '</div>' if sub else ''}
-    </div>
-    """
+    return f"""<div class="kpi-card accent-{accent}">
+<span class="kpi-icon">{icon}</span>
+<div class="kpi-label">{label}</div>
+<div class="kpi-value">{value}</div>
+{'<div class="kpi-sub">' + sub + '</div>' if sub else ''}
+</div>"""
 
 
 def section_header(icon: str, title: str):

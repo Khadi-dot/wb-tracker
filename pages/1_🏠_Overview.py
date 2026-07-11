@@ -104,15 +104,13 @@ if len(top3) > 0:
         rev = int(row["estimated_revenue"])
         sales = int(row["total_sales"])
         with cols[i]:
-            st.markdown(f"""
-            <div class="podium-card {rank_cls[i]}">
-                <div class="podium-rank">{medals[i]}</div>
-                <div class="podium-name" title="{row['name']}">{row['name'][:32]}{'…' if len(row['name'])>32 else ''}</div>
-                <div class="podium-brand">{row['brand']} · {row['category']}</div>
-                <div class="podium-stat">{rev:,} ₽</div>
-                <div class="podium-sub">{sales:,} units · SKU {row['sku']}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="podium-card {rank_cls[i]}">
+<div class="podium-rank">{medals[i]}</div>
+<div class="podium-name" title="{row['name']}">{row['name'][:32]}{'…' if len(row['name'])>32 else ''}</div>
+<div class="podium-brand">{row['brand']} · {row['category']}</div>
+<div class="podium-stat">{rev:,} ₽</div>
+<div class="podium-sub">{sales:,} units · SKU {row['sku']}</div>
+</div>""", unsafe_allow_html=True)
             st.page_link(
                 "pages/4_🔍_Product.py",
                 label="View Details →",

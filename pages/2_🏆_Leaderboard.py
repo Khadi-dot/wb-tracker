@@ -87,7 +87,8 @@ display_cols = [
 ]
 
 st.dataframe(
-    df_filtered[display_cols].style.apply(highlight_own, axis=1),
+    df_filtered.style.apply(highlight_own, axis=1),
+    column_order=display_cols,
     column_config={
         "sku":                st.column_config.TextColumn("SKU"),
         "name":               st.column_config.TextColumn("Product Name"),
