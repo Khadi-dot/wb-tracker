@@ -389,6 +389,9 @@ def load_leaderboard(days: int = 7) -> pd.DataFrame:
     """Load 7-day leaderboard data from the DB."""
     conn = get_db_connection()
     try:
+        is_sqlite = getattr(conn, "is_sqlite", False)
+        raw_conn = getattr(conn, "conn", conn)
+        
         query = f"""
             SELECT
                 t.sku,
@@ -415,7 +418,10 @@ def load_leaderboard(days: int = 7) -> pd.DataFrame:
             GROUP BY t.sku, t.name, t.brand, t.category, t.is_own_store
             ORDER BY total_sales DESC;
         """
-        return pd.read_sql(query, conn)
+        if is_sqlite:
+            query = query.replace(f"CURRENT_DATE - INTERVAL '{days} days'", f"date('now', '-{days} days')")
+            
+        return pd.read_sql(query, raw_conn)
     except Exception as e:
         st.error(f"DB query error (leaderboard): {e}")
         return pd.DataFrame()
@@ -427,6 +433,9 @@ def load_timeline(days: int = 30) -> pd.DataFrame:
     """Load historical snapshot timeline from the DB."""
     conn = get_db_connection()
     try:
+        is_sqlite = getattr(conn, "is_sqlite", False)
+        raw_conn = getattr(conn, "conn", conn)
+        
         query = f"""
             SELECT
                 s.recorded_date,
@@ -444,7 +453,10 @@ def load_timeline(days: int = 30) -> pd.DataFrame:
             WHERE s.recorded_date >= CURRENT_DATE - INTERVAL '{days} days'
             ORDER BY s.recorded_date ASC;
         """
-        df = pd.read_sql(query, conn)
+        if is_sqlite:
+            query = query.replace(f"CURRENT_DATE - INTERVAL '{days} days'", f"date('now', '-{days} days')")
+            
+        df = pd.read_sql(query, raw_conn)
         if not df.empty:
             df["recorded_date"] = pd.to_datetime(df["recorded_date"])
         return df
@@ -459,6 +471,9 @@ def load_product_timeline(sku: str, days: int = 30) -> pd.DataFrame:
     """Load historical snapshots for a single SKU."""
     conn = get_db_connection()
     try:
+        is_sqlite = getattr(conn, "is_sqlite", False)
+        raw_conn = getattr(conn, "conn", conn)
+        
         query = """
             SELECT
                 s.recorded_date,
@@ -472,7 +487,10 @@ def load_product_timeline(sku: str, days: int = 30) -> pd.DataFrame:
             WHERE s.sku = %s
             ORDER BY s.recorded_date ASC;
         """
-        df = pd.read_sql(query, conn, params=(sku,))
+        if is_sqlite:
+            query = query.replace("%s", "?")
+            
+        df = pd.read_sql(query, raw_conn, params=(sku,))
         if not df.empty:
             df["recorded_date"] = pd.to_datetime(df["recorded_date"])
         return df
